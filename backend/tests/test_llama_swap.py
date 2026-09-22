@@ -73,7 +73,11 @@ async def test_unconfirmed_unload_blocks_gpu_handoff(failure):
             return httpx.Response(503)
         if request.method == "POST":
             return httpx.Response(200, json={"msg": "ok"})
-        payload = {} if failure == "malformed" else {"running": [{"model": "qwen"}]}
+        payload = (
+            {"running": "not-a-list"}
+            if failure == "malformed"
+            else {"running": [{"model": "qwen"}]}
+        )
         return httpx.Response(200, json=payload)
 
     lifecycle = LlamaSwapLifecycle(
@@ -100,13 +104,27 @@ async def test_factory_uses_local_gpu_lifecycle(monkeypatch):
     reset_llm_provider()
     provider = get_llm_provider()
     try:
-        assert provider.client.base_url == "http://127.0.0.1:11435/v1"
+        assert provider.client.base_url == "http://127.0.0.1:8080/v1"
         assert provider.lifecycle.uses_local_gpu
         assert provider.lifecycle.release_failure_is_fatal
     finally:
         await provider.lifecycle.close()
         await provider.client.close()
         reset_llm_provider()
+
+
+@pytest.mark.asyncio
+async def test_running_accepts_legacy_single_object_payload():
+    def handler(request):
+        return httpx.Response(200, json={"model": "qwen", "state": "ready"})
+
+    lifecycle = LlamaSwapLifecycle(
+        "http://localhost:8080/v1", transport=httpx.MockTransport(handler)
+    )
+    try:
+        assert (await lifecycle.status("qwen"))["ready"] is True
+    finally:
+        await lifecycle.close()
 
 
 @pytest.mark.asyncio
