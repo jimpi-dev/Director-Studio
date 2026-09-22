@@ -111,6 +111,34 @@ describe("ProductionPage prompt refresh", () => {
     });
   });
 
+  it("does not keep reloading every shot after an H3 job has completed", async () => {
+    const completed = { ...shot(generatedPrompt), status: "succeeded", h3_job_id: "job_done" } as Shot;
+    vi.mocked(getProject).mockResolvedValue(detail(completed));
+
+    render(<ProductionPage active />);
+    await screen.findByText("Corridor walk-in");
+    const initialCalls = vi.mocked(getProject).mock.calls.length;
+
+    await new Promise((resolve) => window.setTimeout(resolve, 3100));
+    expect(getProject).toHaveBeenCalledTimes(initialCalls);
+  });
+
+  it("does not keep polling the selected H3 job after it has completed", async () => {
+    const completed = { ...shot(generatedPrompt), status: "succeeded", h3_job_id: "job_done" } as Shot;
+    vi.mocked(getProject).mockResolvedValue(detail(completed));
+    vi.mocked(getH3Job).mockResolvedValue({
+      id: "job_done", status: "succeeded", name: "done", notes: "", prompt: "", dialogue: [],
+      frames: 90, error: null, comfy_prompt_id: null, external_task_id: null,
+      created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:01:00Z",
+      outputs: {}, input_previews: {}, pipeline_id: "h3_ref2va",
+    });
+
+    render(<ProductionPage active mobile />);
+    await waitFor(() => expect(getH3Job).toHaveBeenCalledWith("job_done"));
+    await new Promise((resolve) => window.setTimeout(resolve, 1600));
+    expect(getH3Job).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a loading state instead of zero shots before mobile project data arrives", async () => {
     let resolveProject!: (value: ProjectDetail) => void;
     vi.mocked(getProject).mockReturnValueOnce(new Promise((resolve) => {
@@ -280,6 +308,29 @@ describe("ProductionPage prompt refresh", () => {
     expect(container.querySelector(".production-submit-actions")).toBeTruthy();
   });
 
+  it("shows the mobile Shot design details on desktop Production", async () => {
+    const planned = {
+      ...shot(emptyPrompt),
+      shot_type: "medium close-up",
+      camera_angle: "eye-level",
+      camera_motion: "tracking push toward Mia",
+      composition: "Mia holds the left third of the frame.",
+      dialogue: ["Open the hatch."],
+    };
+    vi.mocked(getProject).mockResolvedValue(detail(planned));
+
+    render(<ProductionPage active />);
+    fireEvent.click(await screen.findByText("Corridor walk-in"));
+
+    const design = await screen.findByRole("region", { name: "Shot design" });
+    expect(design.textContent).toContain("6s");
+    expect(design.textContent).toContain("medium close-up");
+    expect(design.textContent).toContain("eye-level");
+    expect(design.textContent).toContain("tracking push toward Mia");
+    expect(design.textContent).toContain("Mia holds the left third of the frame.");
+    expect(design.textContent).toContain("Open the hatch.");
+  });
+
   it("renders a read-only mobile Shot review with the final result first", async () => {
     const completed = {
       ...shot(generatedPrompt),
@@ -405,7 +456,7 @@ describe("ProductionPage prompt refresh", () => {
     expect(onReviewMaterials).not.toHaveBeenCalled();
   });
 
-  it("runs a ready Shot from the mobile Production result surface", async () => {
+  it("runs a ready Shot at the resolution selected in mobile Production", async () => {
     const ready = {
       ...shot(generatedPrompt),
       refs: [
@@ -441,9 +492,16 @@ describe("ProductionPage prompt refresh", () => {
 
     const runButton = await screen.findByRole("button", { name: "Run H3" });
     expect(runButton.hasAttribute("disabled")).toBe(false);
+    fireEvent.change(screen.getByLabelText("Resolution"), {
+      target: { value: "portrait-720" },
+    });
     fireEvent.click(runButton);
 
     expect(await screen.findByRole("button", { name: "H3 running…" })).toBeTruthy();
+    expect(submitShot).toHaveBeenCalledWith("sht_1", "local", {
+      width: 704,
+      height: 1280,
+    });
   });
 
   it("does not show the legacy layout approval column or state", async () => {

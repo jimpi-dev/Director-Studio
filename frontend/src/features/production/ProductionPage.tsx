@@ -377,11 +377,15 @@ export function ProductionPage({
       setH3Job(null);
       return;
     }
+    if (!active) return;
     let cancelled = false;
     const tick = () => {
       getH3Job(jobId)
         .then((j) => {
-          if (!cancelled) setH3Job(j);
+          if (!cancelled) {
+            setH3Job(j);
+            if (!ACTIVE.includes(j.status)) window.clearInterval(t);
+          }
         })
         .catch(() => undefined);
     };
@@ -391,11 +395,11 @@ export function ProductionPage({
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [selected?.h3_job_id]);
+  }, [active, selected?.h3_job_id]);
 
   useEffect(() => {
-    if (!projectId) return;
-    const running = shots.some((s) => ACTIVE.includes(s.status as JobStatus) || s.h3_job_id);
+    if (!active || !projectId) return;
+    const running = shots.some((s) => ACTIVE.includes(s.status as JobStatus));
     if (!running) return;
     const t = window.setInterval(() => {
       getProject(projectId)
@@ -403,7 +407,7 @@ export function ProductionPage({
         .catch(() => undefined);
     }, 3000);
     return () => window.clearInterval(t);
-  }, [projectId, shots]);
+  }, [active, projectId, shots]);
 
   const replaceShot = (updated: Shot) => {
     setShots((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
@@ -584,6 +588,26 @@ export function ProductionPage({
     </label>
   );
 
+  const resolutionPicker = (
+    <label className="field-label h3-resolution-picker">
+      Resolution
+      <select
+        className="field-input"
+        value={resolutionPreset}
+        disabled={busy || jobActive}
+        onChange={(event) =>
+          setResolutionPreset(event.target.value as ResolutionPreset)
+        }
+      >
+        <option value="auto">Auto from project</option>
+        <option value="landscape-480">Landscape · 864×480</option>
+        <option value="landscape-720">Landscape 720p tier · 1280×704</option>
+        <option value="portrait-480">Portrait · 480×864</option>
+        <option value="portrait-720">Portrait 720p tier · 704×1280</option>
+      </select>
+    </label>
+  );
+
   if (mobile) {
     const selectedNumber = selected
       ? Math.max(0, shots.findIndex((shot) => shot.id === selected.id)) + 1
@@ -664,6 +688,7 @@ export function ProductionPage({
                 </div>
               ) : null}
               {providerPicker}
+              {resolutionPicker}
               <button
                 type="button"
                 className="btn primary mobile-production-run"
@@ -845,10 +870,32 @@ export function ProductionPage({
               <div className="shot-editor-header">
                 <div>
                   <h2 className="shot-editor-title">{selected.title || selected.id}</h2>
-                  <p className="shot-beat muted">{selected.script_beat}</p>
                 </div>
                 <ProductionStatusChip shot={selected} />
               </div>
+
+              <section className="desktop-shot-design" aria-label="Shot design">
+                <h3>Shot design</h3>
+                <p className="shot-beat muted">{selected.script_beat}</p>
+                <dl className="shot-design-metadata">
+                  <div><dt>Duration</dt><dd>{selected.duration_s}s</dd></div>
+                  <div><dt>Framing</dt><dd>{selected.shot_type || "—"}</dd></div>
+                  <div><dt>Angle</dt><dd>{selected.camera_angle || "—"}</dd></div>
+                  <div><dt>Motion</dt><dd>{selected.camera_motion || "—"}</dd></div>
+                </dl>
+                {selected.composition ? (
+                  <div className="shot-design-note">
+                    <span>Composition</span>
+                    <p>{selected.composition}</p>
+                  </div>
+                ) : null}
+                {selected.dialogue?.length ? (
+                  <div className="shot-design-note">
+                    <span>Dialogue</span>
+                    {selected.dialogue.map((line, index) => <p key={`${line}-${index}`}>{line}</p>)}
+                  </div>
+                ) : null}
+              </section>
 
               <div className="segment-tabs" role="tablist">
                 {tabs.map((t) => (
@@ -1073,23 +1120,7 @@ export function ProductionPage({
 
                 {tab === "run" ? (
                   <div className="tab-panel">
-                    <label className="field-label">
-                      Resolution
-                      <select
-                        className="field-input"
-                        value={resolutionPreset}
-                        disabled={busy || jobActive}
-                        onChange={(event) =>
-                          setResolutionPreset(event.target.value as ResolutionPreset)
-                        }
-                      >
-                        <option value="auto">Auto from project</option>
-                        <option value="landscape-480">Landscape · 864×480</option>
-                        <option value="landscape-720">Landscape 720p tier · 1280×704</option>
-                        <option value="portrait-480">Portrait · 480×864</option>
-                        <option value="portrait-720">Portrait 720p tier · 704×1280</option>
-                      </select>
-                    </label>
+                    {resolutionPicker}
                     <ol className="run-steps">
                       <li className={(selected.refs?.length ?? 0) > 0 ? "done" : ""}>
                         Refs cast
