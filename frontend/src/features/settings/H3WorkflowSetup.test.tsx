@@ -115,7 +115,7 @@ it("uses workflow language and does not expose agent setup controls", async () =
 it("selects output first and shows node names before IDs", async () => {
   render(<H3WorkflowSetup />);
   const file = new File(["{}"], "custom.api.json", { type: "application/json" });
-  fireEvent.change(await screen.findByLabelText("Import Workflow"), { target: { files: [file] } });
+  fireEvent.change(await screen.findByLabelText("Import Workflow file"), { target: { files: [file] } });
   const output = await screen.findByLabelText("Final video node");
   expect(screen.getByRole("option", { name: "Final Video Combine — VHS_VideoCombine (Node 214)" })).toBeTruthy();
   fireEvent.change(output, { target: { value: "214" } });

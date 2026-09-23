@@ -52,6 +52,31 @@ export async function importH3Workflow(file: File): Promise<H3Import> {
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
+
+export interface ComfyCatalog {
+  reachable: boolean;
+  base_url: string;
+  loras: string[];
+  workflows: { path: string; directory: string; size?: number | null; modified?: number | null }[];
+  workflow_dirs: string[];
+  errors: string[];
+}
+
+export async function fetchComfyCatalog(): Promise<ComfyCatalog> {
+  const res = await fetch("/api/comfy/catalog");
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+export async function importH3WorkflowFromComfy(userdataPath: string): Promise<H3Import & { userdata_path?: string }> {
+  const res = await fetch(`${H3_PROFILES}/imports/from-comfy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userdata_path: userdataPath }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
 export const fetchH3ImportAnalysis = (id: string) => profileRequest<H3Analysis>(importPath(id, "analysis"));
 export const selectH3ImportOutput = (id: string, nodeId: string) => profileRequest<H3Analysis>(importPath(id, "output"), "PUT", { node_id: nodeId });
 export const saveH3Mapping = (id: string, mapping: H3Mapping) => profileRequest<{ import_id: string; mapping: H3Mapping }>(importPath(id, "mapping"), "PUT", mapping);
