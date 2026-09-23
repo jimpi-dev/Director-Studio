@@ -435,6 +435,10 @@ export interface DirectorModelStatus {
   provider?: string;
   reachable?: boolean;
   available?: string[];
+  agent_runtime?: "legacy" | "harness";
+  endpoint_url?: string;
+  uses_local_gpu?: boolean;
+  persisted_to?: string;
 }
 
 export async function getDirectorModel(): Promise<DirectorModelStatus> {

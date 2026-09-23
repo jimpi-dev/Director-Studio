@@ -18,6 +18,32 @@ logger = logging.getLogger("director_studio.api.director")
 router = APIRouter(tags=["director"])
 
 
+def _llm_endpoint_url(provider: LLMProvider) -> str:
+    client = getattr(provider, "client", None)
+    if provider.provider_id == "ollama":
+        return getattr(client, "base_url", settings.ollama_base_url).rstrip("/")
+    configured = settings.llm_base_url.strip()
+    if configured:
+        return configured.rstrip("/")
+    defaults = {
+        "lm-studio": "http://127.0.0.1:1234/v1",
+        "llama-swap": "http://127.0.0.1:8080/v1",
+        "openai-compatible": "https://api.openai.com/v1",
+    }
+    fallback = defaults.get(provider.provider_id, "")
+    return (getattr(client, "base_url", None) or fallback).rstrip("/")
+
+
+def _model_catalog_extras(provider: LLMProvider) -> dict:
+    lifecycle = getattr(provider, "lifecycle", None)
+    return {
+        "agent_runtime": settings.director_agent_runtime,
+        "endpoint_url": _llm_endpoint_url(provider),
+        "uses_local_gpu": bool(getattr(lifecycle, "uses_local_gpu", False)),
+        "persisted_to": "data/director_model.json",
+    }
+
+
 @router.get("/director/runtime")
 async def director_runtime(check_sidecar: bool = False) -> dict:
     """Cheap diagnostics: never wakes a model or contacts a generation provider."""
@@ -99,6 +125,7 @@ async def get_model(provider: LLMProvider = Depends(get_llm_provider)) -> dict:
         "provider": provider.provider_id,
         "reachable": reachable,
         "available": available,
+        **_model_catalog_extras(provider),
     }
 
 
@@ -112,11 +139,22 @@ async def put_model(
         name = provider.select_model(body.model, persist=body.persist)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    status = provider.model_status()
+    reachable = True
+    available: list[str] = []
+    try:
+        available = await provider.list_models()
+    except Exception as e:
+        logger.warning("list %s models failed: %s", provider.provider_id, e)
+        reachable = False
     return {
         "ok": True,
-        **provider.model_status(),
+        **status,
         "provider": provider.provider_id,
         "model": name,
+        "reachable": reachable,
+        "available": available,
+        **_model_catalog_extras(provider),
     }
 
 
