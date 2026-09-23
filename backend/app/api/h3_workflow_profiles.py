@@ -10,7 +10,8 @@ from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
-from ..core.comfy.client import ComfyClient
+from ..core.comfy.catalog import fetch_userdata_json
+from ..core.comfy.client import ComfyClient, ComfyError
 from ..core.jobs import create_job, start_pipeline_job
 from ..core.library.images import resolve_asset_image
 from ..core.library.store import asset_dir, load_asset
@@ -41,6 +42,13 @@ class SelectProfileRequest(_StrictModel):
 
 class SelectOutputRequest(_StrictModel):
     node_id: StrictStr = Field(min_length=1)
+
+
+class ImportFromComfyRequest(_StrictModel):
+    userdata_path: StrictStr = Field(
+        min_length=1,
+        description="Relative path from ComfyUI /userdata, e.g. workflows/my_h3.api.json",
+    )
 
 
 class TestProfileRequest(_StrictModel):
@@ -188,25 +196,12 @@ def list_h3_profiles() -> dict[str, Any]:
     return {"active": active, "profiles": profiles}
 
 
-@router.post("/imports", status_code=201, response_model=None)
-async def import_h3_workflow(
-    workflow: Annotated[UploadFile, File()],
+def _register_h3_import(
+    graph: dict[str, Any],
+    *,
+    display_name: str,
+    filename: str,
 ) -> dict[str, Any] | JSONResponse:
-    raw = await workflow.read(MAX_WORKFLOW_BYTES + 1)
-    if len(raw) > MAX_WORKFLOW_BYTES:
-        return _error(
-            400,
-            "workflow_too_large",
-            f"Workflow API JSON exceeds {MAX_WORKFLOW_BYTES // 1024 // 1024} MiB",
-        )
-    try:
-        graph = json.loads(raw.decode("utf-8-sig"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return _error(
-            400, "invalid_workflow_json", "Workflow must contain valid UTF-8 JSON"
-        )
-    if not isinstance(graph, dict):
-        return _error(400, "invalid_workflow_json", "Workflow JSON must be an object")
     try:
         analysis = inspect_h3_workflow(graph)
         structural_issues = [
@@ -232,10 +227,6 @@ async def import_h3_workflow(
                 },
             )
         store = H3ProfileStore()
-        filename = Path(
-            (workflow.filename or "Custom H3 workflow.json").replace("\\", "/")
-        ).stem
-        display_name = filename.removesuffix(".api")
         import_id = store.create_import(graph, display_name=display_name)
         workflow_sha256 = store.import_workflow_sha256(import_id)
     except (TypeError, ValueError) as exc:
@@ -245,8 +236,63 @@ async def import_h3_workflow(
     return {
         "import_id": import_id,
         "workflow_sha256": workflow_sha256,
-        "filename": workflow.filename or "workflow.api.json",
+        "filename": filename,
     }
+
+
+@router.post("/imports", status_code=201, response_model=None)
+async def import_h3_workflow(
+    workflow: Annotated[UploadFile, File()],
+) -> dict[str, Any] | JSONResponse:
+    raw = await workflow.read(MAX_WORKFLOW_BYTES + 1)
+    if len(raw) > MAX_WORKFLOW_BYTES:
+        return _error(
+            400,
+            "workflow_too_large",
+            f"Workflow API JSON exceeds {MAX_WORKFLOW_BYTES // 1024 // 1024} MiB",
+        )
+    try:
+        graph = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _error(
+            400, "invalid_workflow_json", "Workflow must contain valid UTF-8 JSON"
+        )
+    if not isinstance(graph, dict):
+        return _error(400, "invalid_workflow_json", "Workflow JSON must be an object")
+    filename = Path(
+        (workflow.filename or "Custom H3 workflow.json").replace("\\", "/")
+    ).name
+    display_name = Path(filename).stem.removesuffix(".api")
+    return _register_h3_import(
+        graph,
+        display_name=display_name,
+        filename=filename,
+    )
+
+
+@router.post("/imports/from-comfy", status_code=201, response_model=None)
+async def import_h3_workflow_from_comfy(
+    body: ImportFromComfyRequest,
+) -> dict[str, Any] | JSONResponse:
+    """Load a saved workflow JSON from ComfyUI userdata and start H3 profile setup."""
+    try:
+        graph = await fetch_userdata_json(ComfyClient(), body.userdata_path)
+    except ComfyError as exc:
+        return _error(502, "comfy_unreachable", str(exc))
+    except ValueError as exc:
+        return _error(400, "invalid_workflow", str(exc))
+    normalized = body.userdata_path.replace("\\", "/")
+    filename = Path(normalized).name
+    display_name = Path(filename).stem.removesuffix(".api")
+    result = _register_h3_import(
+        graph,
+        display_name=display_name or "ComfyUI workflow",
+        filename=filename,
+    )
+    if isinstance(result, JSONResponse):
+        return result
+    result["userdata_path"] = normalized
+    return result
 
 
 async def _object_info_or_none() -> dict[str, Any] | None:

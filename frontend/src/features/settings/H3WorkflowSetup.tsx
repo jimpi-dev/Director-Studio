@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
   activateH3Import,
+  fetchComfyCatalog,
   fetchH3ImportAnalysis,
   fetchH3Profiles,
   importH3Workflow,
+  importH3WorkflowFromComfy,
+  type ComfyCatalog,
   saveH3Mapping,
   selectH3ImportOutput,
   selectH3Profile,
@@ -90,6 +93,8 @@ export function H3WorkflowSetup({ active = true }: { active?: boolean }) {
   const [job, setJob] = useState<H3JobRecord | null>(null);
   const [assetRefresh, setAssetRefresh] = useState(0);
   const [pollVersion, setPollVersion] = useState(0);
+  const [catalog, setCatalog] = useState<ComfyCatalog | null>(null);
+  const [comfyWorkflowPath, setComfyWorkflowPath] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
   const busy = operation !== "idle";
 
@@ -114,6 +119,21 @@ export function H3WorkflowSetup({ active = true }: { active?: boolean }) {
   useEffect(() => {
     if (error) errorRef.current?.focus();
   }, [error]);
+
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    void fetchComfyCatalog()
+      .then((next) => {
+        if (!cancelled) setCatalog(next);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalog(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, assetRefresh]);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,8 +273,64 @@ export function H3WorkflowSetup({ active = true }: { active?: boolean }) {
         {error ? <div className="banner error" role="alert" tabIndex={-1} ref={errorRef}>{error}</div> : null}
         <section className="section-card" aria-labelledby="custom-h3-title">
           <h2 id="custom-h3-title" className="section-card-title">Custom H3 Workflows</h2>
-          <p className="field-hint">Import a ComfyUI API JSON. Director Studio leaves the internal graph unchanged and only connects its input and final-video boundaries.</p>
-          <label className="field"><span>Import Workflow</span><input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => {
+          <p className="field-hint">
+            Local H3 video uses one Comfy graph at a time (built-in official or your import). Actor, Scene, Prop,
+            and Layout jobs use separate bundled workflows — browse below applies to H3 production. LoRAs stay inside
+            the graph you select; Director does not replace them.
+          </p>
+          <section className="comfy-browser-panel" aria-labelledby="comfy-browser-title">
+            <h3 id="comfy-browser-title">Browse ComfyUI</h3>
+            {catalog ? <>
+              <p className="field-hint">
+                Server <code>{catalog.base_url}</code>
+                {catalog.reachable ? "" : " — unreachable"}
+                {catalog.workflow_dirs.length ? ` · scanning userdata/${catalog.workflow_dirs.join(", ")}` : ""}
+              </p>
+              {catalog.errors.map((item) => <p className="field-hint" key={item}>{item}</p>)}
+              <label className="field">
+                <span>Saved workflow JSON</span>
+                <select
+                  value={comfyWorkflowPath}
+                  disabled={busy || !catalog.workflows.length}
+                  onChange={(event) => setComfyWorkflowPath(event.target.value)}
+                >
+                  <option value="">
+                    {catalog.workflows.length ? "Choose a workflow saved in ComfyUI…" : "No JSON workflows found in userdata"}
+                  </option>
+                  {catalog.workflows.map((item) => (
+                    <option key={item.path} value={item.path}>{item.path}</option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={busy || !comfyWorkflowPath}
+                onClick={() => comfyWorkflowPath && void perform("importing", async () => {
+                  setAnalysis(null); setMapping(null); setJob(null); setTest(null); setStage("draft");
+                  const imported = await importH3WorkflowFromComfy(comfyWorkflowPath);
+                  remember(imported.import_id);
+                  applyAnalysis(await fetchH3ImportAnalysis(imported.import_id));
+                })}
+              >
+                Import from ComfyUI
+              </button>
+              <details>
+                <summary>LoRAs on this Comfy server ({catalog.loras.length})</summary>
+                {catalog.loras.length ? (
+                  <ul className="comfy-lora-list">
+                    {catalog.loras.map((name) => <li key={name}><code>{name}</code></li>)}
+                  </ul>
+                ) : (
+                  <p className="field-hint">No LoRA files reported under ComfyUI models/loras.</p>
+                )}
+              </details>
+            </> : <p className="field-hint">Loading ComfyUI catalog…</p>}
+            <button type="button" className="btn secondary" disabled={busy} onClick={() => setAssetRefresh((value) => value + 1)}>
+              Refresh Comfy catalog
+            </button>
+          </section>
+          <label className="field"><span>Import Workflow file</span><input type="file" accept=".json,application/json" disabled={busy} onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
             if (file) void perform("importing", async () => {
