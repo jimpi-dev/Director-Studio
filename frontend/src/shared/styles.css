@@ -37,6 +37,18 @@
 }
 .settings-close-button:hover { background: var(--accent-soft); color: var(--text); }
 .settings-close-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.llm-settings-panel { margin-bottom: 1.5rem; }
+.llm-settings-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem 1.25rem;
+  margin: 1rem 0;
+}
+.llm-settings-meta dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.llm-settings-meta dd { margin: 0.15rem 0 0; }
+.llm-settings-picker { display: flex; flex-direction: column; gap: 0.35rem; max-width: 36rem; }
+.llm-settings-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+.llm-settings-panel .success { color: var(--ok, #2e7d32); }
 .h3-workflow-setup { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 24px; max-width: 1180px; margin: 0 auto; align-items: start; }
 .workflow-profile-rail { position: sticky; top: 96px; }
 .workflow-profile-name { display: block; font-size: 1.1rem; margin: 20px 0 8px; overflow-wrap: anywhere; }

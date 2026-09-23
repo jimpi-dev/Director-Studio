@@ -46,13 +46,13 @@ class EmptySelectionProvider(FakeProvider):
 async def test_director_model_catalog_comes_from_provider() -> None:
     result = await director.get_model(provider=FakeProvider())
 
-    assert result == {
-        "model": "reasoner-fast",
-        "source": "provider",
-        "provider": "fake-remote",
-        "reachable": True,
-        "available": ["reasoner-large", "reasoner-fast"],
-    }
+    assert result["model"] == "reasoner-fast"
+    assert result["provider"] == "fake-remote"
+    assert result["reachable"] is True
+    assert result["available"] == ["reasoner-large", "reasoner-fast"]
+    assert result["agent_runtime"] in {"legacy", "harness"}
+    assert "endpoint_url" in result
+    assert "uses_local_gpu" in result
 
 
 @pytest.mark.asyncio

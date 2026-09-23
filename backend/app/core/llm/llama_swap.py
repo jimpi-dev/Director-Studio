@@ -44,7 +44,17 @@ class LlamaSwapLifecycle:
     async def _running(self) -> list[dict[str, Any]]:
         response = await self._client.get("/running")
         response.raise_for_status()
-        running = response.json().get("running")
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Invalid llama-swap running-model response")
+        running = payload.get("running")
+        if running is None:
+            # Pre-list format: single object or empty {} when nothing is loaded.
+            if not payload:
+                return []
+            if isinstance(payload.get("model"), str):
+                return [{"model": payload["model"], "state": payload.get("state")}]
+            raise RuntimeError("Invalid llama-swap running-model response")
         if not isinstance(running, list) or any(
             not isinstance(item, dict) for item in running
         ):

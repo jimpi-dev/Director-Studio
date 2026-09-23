@@ -45,7 +45,7 @@ def get_llm_provider():
     if provider_id == "lm-studio":
         base_url = base_url or "http://127.0.0.1:1234/v1"
     elif provider_id == "llama-swap":
-        base_url = base_url or "http://127.0.0.1:11435/v1"
+        base_url = base_url or "http://127.0.0.1:8080/v1"
     else:
         base_url = base_url or "https://api.openai.com/v1"
     client = OpenAICompatibleClient(
